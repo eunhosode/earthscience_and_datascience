@@ -1,5 +1,5 @@
 # earthscience_and_datascience
-고급지구과학 수행평가
+고급지구과학
 
 필요한 파일: NOAA에서 다운로드  
 lisiecki2005-d18o-stack-noaa.txt  
