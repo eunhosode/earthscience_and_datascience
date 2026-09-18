@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 
 # 1. LR04 데이터 불러오기
-file_path = r"C:\Users\(Username)\Downloads\lisiecki2005-d18o-stack-noaa.txt"
+file_path = r"lisiecki2005-d18o-stack-noaa.txt"
 
 df = pd.read_csv(
     file_path,
