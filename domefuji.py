@@ -84,123 +84,103 @@ ice = pd.concat(
 ice = ice.sort_values("age_ka")
 
 
-print("Dome Fuji 자료 범위")
-print(
-    round(ice["age_ka"].min(), 1),
-    "~",
-    round(ice["age_ka"].max(), 1),
-    "ka BP"
-)
+from scipy.signal import detrend
+
+# 0~700 ka
+dome = ice[
+    (ice["age_ka"] >= 0) &
+    (ice["age_ka"] <= 700)
+].copy()
+
+dome = dome.sort_values("age_ka")
 
 
-# ==========================================================
-# 5. 1 ka 간격으로 보간
-# ==========================================================
-
-ages = np.arange(
-    0,
-    int(ice["age_ka"].max()) + 1,
-    1
-)
+ages = np.arange(0, 701, 1)
 
 d18o = np.interp(
     ages,
-    ice["age_ka"],
-    ice["d18O"]
+    dome["age_ka"],
+    dome["d18O"]
 )
 
 
-# ==========================================================
-# 6. 작은 변동을 줄이기 위해 11 ka 이동평균
-# ==========================================================
-
-smooth = pd.Series(d18o).rolling(
-    window=11,
-    center=True,
-    min_periods=1
-).mean()
+signal = detrend(d18o)
+signal = signal - np.mean(signal)
 
 
-# ==========================================================
-# 7. 주요 빙하기 찾기
-#
-# 빙하 코어에서는 δ18O가 더 낮을수록 추운 시기.
-# 따라서 -smooth의 봉우리를 찾으면
-# 원래 그래프의 큰 골짜기를 찾을 수 있음.
-# ==========================================================
+fft_values = np.fft.rfft(signal)
 
-peaks, properties = find_peaks(
-    -smooth,
-    prominence=1.0,
-    distance=70
+frequencies = np.fft.rfftfreq(
+    len(signal),
+    d=1
 )
 
-glacial_ages = ages[peaks]
+power = np.abs(fft_values) ** 2
 
 
-# ==========================================================
-# 8. 빙하기 사이 간격 계산
-# ==========================================================
+frequencies = frequencies[1:]
+power = power[1:]
 
-periods = np.diff(glacial_ages)
+periods = 1 / frequencies
 
-print("\n주요 빙하기 연대 (ka BP)")
-print(glacial_ages)
 
-print("\n빙하기 사이의 간격 (천 년)")
-print(periods)
+mask = (
+    (periods >= 10) &
+    (periods <= 200)
+)
 
-if len(periods) > 0:
+from scipy.signal import find_peaks
+
+# 10~200 kyr 범위
+p = periods[mask]
+pw = power[mask]
+
+# 주기가 작은 것 → 큰 것 순서로 정렬
+order = np.argsort(p)
+p = p[order]
+pw = pw[order]
+
+# 최대값을 1로 맞춰 두 자료를 비교하기 쉽게 함
+pw_norm = pw / np.max(pw)
+
+target_periods = [100, 41, 23, 19]
+
+print("궤도 주기와 가까운 Fourier 성분")
+print("기준 주기(kyr) | 실제 FFT 주기(kyr) | 상대 세기")
+
+for target in target_periods:
+    idx = np.argmin(np.abs(p - target))
+
     print(
-        "\n평균 반복 간격:",
-        round(np.mean(periods), 1),
-        "천 년"
+        f"{target:>6}       "
+        f"{p[idx]:>8.2f}          "
+        f"{pw_norm[idx]:.3f}"
     )
 
+# 그래프
+plt.figure(figsize=(12, 6))
 
-# ==========================================================
-# 9. 그래프
-# ==========================================================
-
-plt.figure(figsize=(13, 6))
-
-# 원자료
-plt.plot(
-    ages,
-    d18o,
-    alpha=0.35,
-    label="Dome Fuji d18O"
+# 선 대신 discrete spectrum처럼 표시
+plt.stem(
+    p,
+    pw_norm,
+    basefmt=" "
 )
 
-# 이동평균
-plt.plot(
-    ages,
-    smooth,
-    linewidth=2,
-    label="11 kyr moving average"
-)
+plt.xlabel("Period (kyr)")
+plt.ylabel("Normalized Spectral Power")
 
-# 자동으로 찾은 주요 빙하기
-plt.scatter(
-    glacial_ages,
-    smooth.iloc[peaks],
-    s=55,
-    zorder=5,
-    label="Major glacial periods"
-)
+plt.title("Fourier Spectrum of Dome Fuji")
 
-plt.xlabel("Age (ka BP)")
-plt.ylabel(r"Ice $\delta^{18}O$ (‰)")
+# 알려진 궤도주기는 '찾는 기준'이 아니라
+# 분석 후 비교하기 위한 참고선으로만 표시
+plt.axvline(100, linestyle="--", label="Eccentricity (~100 kyr)")
+plt.axvline(41, linestyle="--", label="Obliquity (~41 kyr)")
+plt.axvline(23, linestyle="--", label="Precession (~23 kyr)")
+plt.axvline(19, linestyle="--", label="Precession (~19 kyr)")
 
-plt.title(
-    "Dome Fuji Ice Core Oxygen Isotope Record"
-)
-
-# 왼쪽 = 과거, 오른쪽 = 현재
-plt.xlim(
-    ice["age_ka"].max(),
-    0
-)
+plt.xlim(10, 200)
+plt.ylim(0, 1.05)
 
 plt.grid(alpha=0.3)
 plt.legend()
