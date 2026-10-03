@@ -1,0 +1,237 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.signal import detrend, find_peaks
+
+
+# ==========================================================
+# 1. orbit91 데이터 불러오기
+# ==========================================================
+
+columns = [
+    "time",
+    "ECC",
+    "OMEGA",
+    "OBL",
+    "PREC",
+    "65NJul",
+    "65SJan",
+    "15NJul",
+    "15SJan"
+]
+
+orbit = pd.read_csv(
+    "orbit91.txt",
+    sep=r"\s+",
+    skiprows=2,
+    names=columns
+)
+
+
+# NOAA 자료에서는 과거가 음수이므로
+# 우리가 쓰던 ka BP 형식으로 변환
+orbit["age_ka"] = -orbit["time"]
+
+
+# ==========================================================
+# 2. LR04 / Dome Fuji와 동일하게 최근 700 ka만 사용
+# ==========================================================
+
+orbit = orbit[
+    (orbit["age_ka"] >= 0) &
+    (orbit["age_ka"] <= 700)
+].copy()
+
+orbit = orbit.sort_values("age_ka")
+
+
+print("자료 범위:")
+print(
+    orbit["age_ka"].min(),
+    "~",
+    orbit["age_ka"].max(),
+    "ka BP"
+)
+
+
+# ==========================================================
+# 3. FFT 분석 함수
+# ==========================================================
+
+def fourier_analysis(data, variable, title):
+
+    values = data[variable].to_numpy()
+
+    # 선형 추세 및 평균 제거
+    signal = detrend(values)
+    signal = signal - np.mean(signal)
+
+    # Fourier Transform
+    fft_values = np.fft.rfft(signal)
+
+    frequencies = np.fft.rfftfreq(
+        len(signal),
+        d=1       # 1 kyr 간격
+    )
+
+    power = np.abs(fft_values) ** 2
+
+    # 주파수 0 제거
+    frequencies = frequencies[1:]
+    power = power[1:]
+
+    # frequency → period
+    periods = 1 / frequencies
+
+
+    # ------------------------------------------------------
+    # 10~200 kyr 범위만 분석
+    # ------------------------------------------------------
+
+    mask = (
+        (periods >= 10) &
+        (periods <= 200)
+    )
+
+    p = periods[mask]
+    pw = power[mask]
+
+    # 주기 작은 순 → 큰 순 정렬
+    order = np.argsort(p)
+
+    p = p[order]
+    pw = pw[order]
+
+
+    # 최대값 = 1로 정규화
+    pw_norm = pw / np.max(pw)
+
+
+    # ======================================================
+    # 4. 주요 Fourier peak 자동 탐색
+    # ======================================================
+
+    peak_idx, _ = find_peaks(pw_norm)
+
+    peak_idx = sorted(
+        peak_idx,
+        key=lambda i: pw_norm[i],
+        reverse=True
+    )
+
+
+    print()
+    print("=" * 50)
+    print(title)
+    print("=" * 50)
+
+    print("\n가장 강한 Fourier 피크")
+    print("주기(kyr)   상대 세기")
+
+    for i in peak_idx[:8]:
+        print(
+            f"{p[i]:7.2f}     {pw_norm[i]:.3f}"
+        )
+
+
+    # ======================================================
+    # 5. 알려진 궤도 주기 부근의 세기 확인
+    # ======================================================
+
+    target_periods = [100, 41, 23, 19]
+
+    print("\n대표 궤도 주기 부근")
+    print("기준 주기 | 실제 FFT 주기 | 상대 세기")
+
+    for target in target_periods:
+
+        idx = np.argmin(
+            np.abs(p - target)
+        )
+
+        print(
+            f"{target:>5} kyr    "
+            f"{p[idx]:6.2f} kyr      "
+            f"{pw_norm[idx]:.3f}"
+        )
+
+
+    # ======================================================
+    # 6. 그래프
+    # ======================================================
+
+    plt.figure(figsize=(12, 6))
+
+    plt.stem(
+        p,
+        pw_norm,
+        basefmt=" "
+    )
+
+    # 기존에 알려진 궤도주기 참고선
+    plt.axvline(
+        100,
+        linestyle="--",
+        label="Eccentricity (~100 kyr)"
+    )
+
+    plt.axvline(
+        41,
+        linestyle="--",
+        label="Obliquity (~41 kyr)"
+    )
+
+    plt.axvline(
+        23,
+        linestyle="--",
+        label="Precession (~23 kyr)"
+    )
+
+    plt.axvline(
+        19,
+        linestyle="--",
+        label="Precession (~19 kyr)"
+    )
+
+    plt.xlabel("Period (kyr)")
+    plt.ylabel("Normalized Spectral Power")
+
+    plt.title(title)
+
+    plt.xlim(10, 200)
+    plt.ylim(0, 1.05)
+
+    plt.grid(alpha=0.3)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+
+# ==========================================================
+# 7. 각각 분석
+# ==========================================================
+
+fourier_analysis(
+    orbit,
+    "ECC",
+    "Fourier Spectrum of Orbital Eccentricity"
+)
+
+fourier_analysis(
+    orbit,
+    "OBL",
+    "Fourier Spectrum of Obliquity"
+)
+
+fourier_analysis(
+    orbit,
+    "PREC",
+    "Fourier Spectrum of Climatic Precession"
+)
+
+fourier_analysis(
+    orbit,
+    "65NJul",
+    "Fourier Spectrum of 65N July Insolation"
+)
